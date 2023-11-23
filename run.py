@@ -1,6 +1,8 @@
 # https://live.kuaishou.com/live_api/liveroom/websocketinfo?liveStreamId=2SNt9-_ZuKQ
 # https://livev.m.chenzhongtech.com/wap/live/feed?liveStreamId=2SNt9-_ZuKQ
 import sys
+import os
+import signal
 
 from playwright.sync_api import sync_playwright
 import threading
@@ -18,6 +20,7 @@ EXIT_PIPE_NAME = r"\\.\pipe\kspy_exit_msg_pipe"
 
 user_data_dir = "ms-playwright/firefox-1429/firefox/user data"    # 指定缓存目录，用相对路径
 executable_path = "ms-playwright/firefox-1429/firefox/firefox.exe"
+# executable_path = "dist/ms-playwright/firefox-1429/firefox/firefox.exe"
 
 
 class kslive(object):
@@ -44,6 +47,7 @@ class kslive(object):
 
             self.conn.write(open(self.file_path, "w"))
             self.thread = self.conn.getint('set', 'thread')
+            self.mode = self.conn.getboolean('set', 'debug')
 
             if len(defaultDict):
                 self.live_ids = defaultDict['live_ids']
@@ -111,17 +115,24 @@ class kslive(object):
                 print(e)
                 break
         win32file.CloseHandle(_pipe)
-        sys.exit()
-
+        # sys.exit()
+        pid = os.getpid()  # 获取当前进程的PID
+        os.kill(pid, signal.SIGTERM)  # 主动结束指定ID的程序运行
     def main(self, lid, semaphore):
         with semaphore:
             thread_name = threading.current_thread().name.split("-")[0]
             print('start conect web')
             with sync_playwright() as p:
                 # self.browser = p.firefox.launch(headless=False)
-                self.context = p.firefox.launch_persistent_context(user_data_dir="",
-                                                                   executable_path=executable_path,
-                                                                   headless=False)
+                if self.mode:
+                    self.context = p.firefox.launch_persistent_context(user_data_dir="",
+                                                                       executable_path=executable_path,
+                                                                       headless=False)
+                else:
+                    self.context = p.firefox.launch_persistent_context(
+                        user_data_dir="",
+                        executable_path=executable_path,
+                        headless=True)
                 # self.browser = p.firefox.launch(headless=True)
                 # executable_path=self.path + self.chrome_path
                 # cookie_list = self.find_file("cookie", "json")
@@ -148,26 +159,35 @@ class kslive(object):
                                                 timeout=1000 * 60 * 2)
                     if not os.path.exists(self.path + "\\cookie"):
                         os.makedirs(self.path + "\\cookie")
-                    self.context.storage_state(path=self.path + "\\cookie\\" + self.phone + ".json")
+                    # self.context.storage_state(path=self.path + "\\cookie\\" + self.phone + ".json")
                     # 检测是否开播
                     selector = "html body div#app div.live-room div.detail div.player " \
                                "div.kwai-player.kwai-player-container.kwai-player-rotation-0 " \
                                "div.kwai-player-container-video div.kwai-player-plugins div.center-state div.state " \
                                "div.no-live-detail div.desc p.tip"  # 检测正在直播时下播的选择器
-                    try:
-                        msg = self.page.locator(selector).text_content(timeout=3000)
-                        print("当前%s" % thread_name + "，" + msg)
-                        self.context.close()
+                    # try:
+                    #     msg = self.page.locator(selector).text_content(timeout=3000)
+                    #     print("当前%s" % thread_name + "，" + msg)
+                    #     self.context.close()
+                    #     # self.browser.close()
+                    #
+                    # except Exception as e:
+                    #     print("当前%s，[%s]正在直播" % (thread_name, lid))
+                    #     self.page.goto(self.uri + lid)
+                    #     self.page.on("websocket", self.web_sockets)
+                    #     self.page.wait_for_selector(selector, timeout=86400000)
+                    #     print("当前%s，[%s]的直播结束了" % (thread_name, lid))
+                    #     self.context.close()
                         # self.browser.close()
 
-                    except Exception as e:
-                        print("当前%s，[%s]正在直播" % (thread_name, lid))
-                        self.page.goto(self.uri + lid)
-                        self.page.on("websocket", self.web_sockets)
-                        self.page.wait_for_selector(selector, timeout=86400000)
-                        print("当前%s，[%s]的直播结束了" % (thread_name, lid))
-                        self.context.close()
-                        # self.browser.close()
+                    print("当前%s，[%s]正在直播" % (thread_name, lid))
+                    self.page.goto(self.uri + lid)
+                    self.page.on("websocket", self.web_sockets)
+                    self.page.wait_for_selector(selector, timeout=86400000)
+                    print("当前%s，[%s]的直播结束了" % (thread_name, lid))
+                    self.context.close()
+
+
 
                 except Exception:
                     print("登录失败")
@@ -265,6 +285,6 @@ if __name__ == "__main__":
                         help='live room id')
     cmd_args = parser.parse_args()
 
-    cmd_args.roomId = 'KPL704668133'
+    # cmd_args.roomId = 'KPL704668133'
 
     run(live_ids=cmd_args.roomId, phone=cmd_args.mobile, pwd=cmd_args.pwd).run_live()
