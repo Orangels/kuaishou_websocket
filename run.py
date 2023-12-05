@@ -3,7 +3,7 @@
 import sys
 import os
 import signal
-
+from giftJson import giftDict
 from playwright.sync_api import sync_playwright
 import threading
 import os
@@ -18,9 +18,9 @@ import win32file
 BARRAGE_PIPE_NAME = r"\\.\pipe\kspy_barrage_msg_pipe"
 EXIT_PIPE_NAME = r"\\.\pipe\kspy_exit_msg_pipe"
 
-user_data_dir = "ms-playwright/firefox-1429/firefox/user data"    # 指定缓存目录，用相对路径
-executable_path = "ms-playwright/firefox-1429/firefox/firefox.exe"
-# executable_path = "dist/ms-playwright/firefox-1429/firefox/firefox.exe"
+user_data_dir = "ms-playwright/firefox-1429/firefox/user data"  # 指定缓存目录，用相对路径
+# executable_path = "ms-playwright/firefox-1429/firefox/firefox.exe"
+executable_path = "dist/ms-playwright/firefox-1429/firefox/firefox.exe"
 
 
 class kslive(object):
@@ -38,14 +38,14 @@ class kslive(object):
             self.conn = ConfigParser()
             self.conn.read(self.file_path)
 
-            if not self.conn.has_option('set', 'thread'):
-                self.conn.set('set', 'thread', '2')
-            if not self.conn.has_option('set', 'live_ids'):
-                self.conn.set('set', 'live_ids', '')
-            if not self.conn.has_option('set', 'phone'):
-                self.conn.set('set', 'phone', '')
-
-            self.conn.write(open(self.file_path, "w"))
+            # if not self.conn.has_option('set', 'thread'):
+            #     self.conn.set('set', 'thread', '2')
+            # if not self.conn.has_option('set', 'live_ids'):
+            #     self.conn.set('set', 'live_ids', '')
+            # if not self.conn.has_option('set', 'phone'):
+            #     self.conn.set('set', 'phone', '')
+            #
+            # self.conn.write(open(self.file_path, "w"))
             self.thread = self.conn.getint('set', 'thread')
             self.mode = self.conn.getboolean('set', 'debug')
 
@@ -57,8 +57,12 @@ class kslive(object):
                 self.live_ids = self.conn.get('set', 'live_ids')
                 self.phone = self.conn.get('set', 'phone')
                 self.pwd = self.conn.get('set', 'pwd')
+        # TODO 关注包
+        self.barrageLists = []  # 弹幕
+        self.watchingUsersLists = []  # 进入直播间
+        self.giftLists = []  # 礼物
+        self.likeLists = []  # 点赞
 
-        self.barrageLists = []
         self.lock = threading.Lock()
 
     def find_file(self, find_path, file_type) -> list:
@@ -101,7 +105,7 @@ class kslive(object):
                 #         "a") as f:
                 #     f.write("pass barrage msg \n")
                 if len(self.barrageLists) != 0:
-                    #self.barrageLists.append('测试啊啊啊啊啊啊啊啊吧吧吧吧吧吧')
+                    # self.barrageLists.append('测试啊啊啊啊啊啊啊啊吧吧吧吧吧吧')
                     for i, msg in enumerate(self.barrageLists):
                         print(f'{i} -- {msg}')
                     my_bytes = '^'.join(self.barrageLists).encode()
@@ -118,6 +122,7 @@ class kslive(object):
         # sys.exit()
         pid = os.getpid()  # 获取当前进程的PID
         os.kill(pid, signal.SIGTERM)  # 主动结束指定ID的程序运行
+
     def main(self, lid, semaphore):
         with semaphore:
             thread_name = threading.current_thread().name.split("-")[0]
@@ -125,9 +130,10 @@ class kslive(object):
             with sync_playwright() as p:
                 # self.browser = p.firefox.launch(headless=False)
                 if self.mode:
-                    self.context = p.firefox.launch_persistent_context(user_data_dir="",
-                                                                       executable_path=executable_path,
-                                                                       headless=False)
+                    self.context = p.firefox.launch_persistent_context(
+                        user_data_dir="",
+                        executable_path=executable_path,
+                        headless=False)
                 else:
                     self.context = p.firefox.launch_persistent_context(
                         user_data_dir="",
@@ -139,12 +145,14 @@ class kslive(object):
                 # self.context = self.browser.new_context(storage_state=cookie_list[0], user_agent=self.ua)
                 # self.context = self.browser.new_context(user_agent=self.ua)
                 self.page = self.context.new_page()
-                self.page.add_init_script("Object.defineProperties(navigator, {webdriver:{get:()=>undefined}});")
+                self.page.add_init_script(
+                    "Object.defineProperties(navigator, {webdriver:{get:()=>undefined}});")
                 self.page.goto("https://live.kuaishou.com/")
                 element = self.page.get_attribute('.no-login', "style")
                 if not element:
                     self.page.locator('.login').click()
-                    self.page.locator('li.tab-panel:nth-child(2) > h4:nth-child(1)').click()
+                    self.page.locator(
+                        'li.tab-panel:nth-child(2) > h4:nth-child(1)').click()
                     self.page.locator('.change-login').click()
                     self.page.locator(
                         'div.normal-login-item:nth-child(1) > div:nth-child(1) > input:nth-child(1)').fill(
@@ -154,9 +162,10 @@ class kslive(object):
                         self.pwd)
                     self.page.locator('.login-button').click()
                 try:
-                    self.page.wait_for_selector("#app > section > div.header-placeholder > header > div.header-main > "
-                                                "div.right-part > div.user-info > div.tooltip-trigger > span",
-                                                timeout=1000 * 60 * 2)
+                    self.page.wait_for_selector(
+                        "#app > section > div.header-placeholder > header > div.header-main > "
+                        "div.right-part > div.user-info > div.tooltip-trigger > span",
+                        timeout=1000 * 60 * 2)
                     if not os.path.exists(self.path + "\\cookie"):
                         os.makedirs(self.path + "\\cookie")
                     # self.context.storage_state(path=self.path + "\\cookie\\" + self.phone + ".json")
@@ -178,7 +187,7 @@ class kslive(object):
                     #     self.page.wait_for_selector(selector, timeout=86400000)
                     #     print("当前%s，[%s]的直播结束了" % (thread_name, lid))
                     #     self.context.close()
-                        # self.browser.close()
+                    # self.browser.close()
 
                     print("当前%s，[%s]正在直播" % (thread_name, lid))
                     self.page.goto(self.uri + lid)
@@ -210,32 +219,49 @@ class kslive(object):
         Message = kuaishou_pb2.SocketMessage()
         Message.ParseFromString(websocket)
         if Message.payloadType == 310:
-            SCWebFeedPUsh = kuaishou_pb2.SCWebFeedPush()
-            SCWebFeedPUsh.ParseFromString(Message.payload)
-            obj = MessageToDict(SCWebFeedPUsh, preserving_proto_field_name=True)
+            self.parseFeedPushPack(Message.payload)
+        if Message.payloadType == kuaishou_pb2.PayloadType.SC_LIVE_WATCHING_LIST:
+            self.parseSCWebLiveWatchingUsers(Message.payload)
 
-            if obj.get('commentFeeds', ''):
-                msg_list = obj.get('commentFeeds', '')
-                self.lock.acquire()
-                for i in msg_list:
-                    userName = i['user']['userName']
-                    pid = i['user']['principalId']
-                    content = i['content']
-                    print("msg - %s  -->  %s  -->  %s" % (userName, pid, content))
-                    self.barrageLists.append(content)
-                self.lock.release()
-            # if obj.get('giftFeeds', ''):
-            #     msg_list = obj.get('giftFeeds', '')
-            #     for i in msg_list:
-            #         userName = i['user']['userName']
-            #         pid = i['user']['principalId']
-            #         print("giftFeeds - %s  -->  %s" % (userName, pid))
-            # if obj.get('likeFeeds', ''):
-            #     msg_list = obj.get('likeFeeds', '')
-            #     for i in msg_list:
-            #         userName = i['user']['userName']
-            #         pid = i['user']['principalId']
-            #         print("likeFeeds - %s -->  %s" % (userName, pid))
+    def parseFeedPushPack(self, message: bytes):
+        SCWebFeedPUsh = kuaishou_pb2.SCWebFeedPush()
+        SCWebFeedPUsh.ParseFromString(message)
+        obj = MessageToDict(SCWebFeedPUsh, preserving_proto_field_name=True)
+
+        if obj.get('commentFeeds', ''):
+            msg_list = obj.get('commentFeeds', '')
+            self.lock.acquire()
+            for i in msg_list:
+                userName = i['user']['userName']
+                pid = i['user']['principalId']
+                content = i['content']
+                print("msg - %s  -->  %s  -->  %s" % (userName, pid, content))
+                self.barrageLists.append(dict(user=userName, content=content))
+            self.lock.release()
+        if obj.get('giftFeeds', ''):
+            msg_list = obj.get('giftFeeds', '')
+            self.lock.acquire()
+            for i in msg_list:
+                userName = i['user']['userName']
+                giftId = i['giftId']
+                giftName = giftDict["data"][str(giftId)]["giftName"]
+                print("giftFeeds - %s  -->  %s" % (userName, giftName))
+                self.giftLists.append(dict(user=userName, gift=giftName))
+            self.lock.release()
+        if obj.get('likeFeeds', ''):
+            msg_list = obj.get('likeFeeds', '')
+            self.lock.acquire()
+            for i in msg_list:
+                userName = i['user']['userName']
+                pid = i['user']['principalId']
+                print("likeFeeds - %s -->  %s" % (userName, pid))
+                self.likeLists.append(dict(user=userName))
+            self.lock.release()
+
+    def parseSCWebLiveWatchingUsers(self, message: bytes):
+        scWebLiveWatchingUsers = kuaishou_pb2.SCWebLiveWatchingUsers()
+        scWebLiveWatchingUsers.ParseFromString(message)
+        data = MessageToDict(scWebLiveWatchingUsers, preserving_proto_field_name=True)
 
 
 class run(kslive):
@@ -267,8 +293,10 @@ class run(kslive):
         for i in self.ids_list:
             n += 1
             ksliveHandler = kslive(**self.defaultDict)
-            t = threading.Thread(target=ksliveHandler.main, args=(i, semaphore), name=f"线程：{n}-{i}")
-            t_con = threading.Thread(target=ksliveHandler.sendThread, args=(), name=f"线程：{n}-{i} sendThread")
+            t = threading.Thread(target=ksliveHandler.main, args=(i, semaphore),
+                                 name=f"线程：{n}-{i}")
+            t_con = threading.Thread(target=ksliveHandler.sendThread, args=(),
+                                     name=f"线程：{n}-{i} sendThread")
             t.start()
             t_con.start()
             t_list.append(t)
@@ -279,12 +307,15 @@ class run(kslive):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="avatar engine")
-    parser.add_argument('-m', "--mobile", type=str, default='13841281063', help="mobile phone")
-    parser.add_argument('-p', "--pwd", type=str, default="asdasd", help="pass word")
+    parser.add_argument('-m', "--mobile", type=str, default='13841281063',
+                        help="mobile phone")
+    parser.add_argument('-p', "--pwd", type=str, default="asdasd",
+                        help="pass word")
     parser.add_argument('-r', '--roomId', type=str, default='Mubai0806',
                         help='live room id')
     cmd_args = parser.parse_args()
 
     # cmd_args.roomId = 'KPL704668133'
 
-    run(live_ids=cmd_args.roomId, phone=cmd_args.mobile, pwd=cmd_args.pwd).run_live()
+    run(live_ids=cmd_args.roomId, phone=cmd_args.mobile,
+        pwd=cmd_args.pwd).run_live()

@@ -19,7 +19,7 @@ playwright install firefox
 pyi-makespec -F -w .\run.py
 Pyinstaller run.spec
 ```
-修改 run.spec 的 ['run.py','kuaishou_pb2.py']  
+修改 run.spec 的 ['run.py','kuaishou_pb2.py', 'giftJson.py']  
 [pyinstaller 和 playwright](https://blog.csdn.net/xiaohouzi112233/article/details/128013408)  
 [pyinstaller](https://xiaokang2022.blog.csdn.net/article/details/127585881?spm=1001.2101.3001.6650.3&utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-3-127585881-blog-123668136.235%5Ev38%5Epc_relevant_yljh&depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-3-127585881-blog-123668136.235%5Ev38%5Epc_relevant_yljh&utm_relevant_index=4)
 python3.10以上下载的playinstaller 需要指定版本[github](https://github.com/TomSchimansky/CustomTkinter/wiki/Packaging#windows-pyinstaller-auto-py-to-exe)  
