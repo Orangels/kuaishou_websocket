@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['run.py', 'kuaishou_pb2.py'],
+    ['run.py','kuaishou_pb2.py', 'giftJson.py'],
     pathex=[],
     binaries=[],
     datas=[],

@@ -2,6 +2,7 @@
 # https://livev.m.chenzhongtech.com/wap/live/feed?liveStreamId=2SNt9-_ZuKQ
 import sys
 import os
+import yaml
 import signal
 from giftJson import giftDict
 from playwright.sync_api import sync_playwright
@@ -11,7 +12,11 @@ import time
 import json
 from google.protobuf.json_format import MessageToDict
 from configparser import ConfigParser
-import kuaishou_pb2
+# import kuaishou_pb2
+from ks_pb2 import SocketMessage
+from ks_pb2 import SCWebFeedPush
+from ks_pb2 import SCWebLiveWatchingUsers
+from ks_pb2 import PayloadType
 import argparse
 import win32file
 
@@ -86,6 +91,9 @@ class kslive(object):
     def sendThread(self):
         time.sleep(10)
         print('start pipe thread')
+        with open('./avatarfile/cfg/avatarXM.yaml', 'r', encoding='utf-8') as f:
+            config = yaml.load(f, Loader=yaml.FullLoader)
+        BARRAGE_INTERVAL = config["TEST"]["BARRAGE_INTERVAL"]
         while True:
             try:
                 _pipe = win32file.CreateFile(BARRAGE_PIPE_NAME,
@@ -95,7 +103,7 @@ class kslive(object):
                 if _pipe != win32file.INVALID_HANDLE_VALUE:
                     break
             except Exception as e:
-                pass
+                print(e)
 
         while True:
             try:
@@ -104,17 +112,24 @@ class kslive(object):
                 #         f"./avatarfile/bin/obs-kuaishou-live-main/logs/{int(time.time())}.log",
                 #         "a") as f:
                 #     f.write("pass barrage msg \n")
-                if len(self.barrageLists) != 0:
-                    # self.barrageLists.append('测试啊啊啊啊啊啊啊啊吧吧吧吧吧吧')
-                    for i, msg in enumerate(self.barrageLists):
-                        print(f'{i} -- {msg}')
-                    my_bytes = '^'.join(self.barrageLists).encode()
-                    result = win32file.WriteFile(_pipe, my_bytes)
-                    self.lock.acquire()
-                    self.barrageLists.clear()
-                    self.lock.release()
-                    print('pass barrage message done')
-                time.sleep(10)
+                self.lock.acquire()
+
+                postStr = json.dumps(dict(aBarrage=self.barrageLists,
+                                          aMember=self.watchingUsersLists,
+                                          aLike=self.likeLists,
+                                          aGift=self.giftLists),
+                                     ensure_ascii=False)
+                self.barrageLists.clear()
+                self.watchingUsersLists.clear()
+                self.likeLists.clear()
+                self.giftLists.clear()
+
+                self.lock.release()
+                print(f"{postStr}")
+                postStr = postStr.encode()
+                result = win32file.WriteFile(_pipe, postStr)
+                print(f"pass barrage message done {result}")
+                time.sleep(BARRAGE_INTERVAL)
             except Exception as e:
                 print(e)
                 break
@@ -205,7 +220,7 @@ class kslive(object):
 
     def web_sockets(self, web_socket):
         urls = web_socket.url
-        print(urls)
+        print(f"urls -- {urls}")
         if '/websocket' in urls:
             web_socket.on("close", self.websocket_close)
             web_socket.on("framereceived", self.handler)
@@ -216,15 +231,17 @@ class kslive(object):
         # self.browser.close()
 
     def handler(self, websocket):
-        Message = kuaishou_pb2.SocketMessage()
+        # Message = kuaishou_pb2.SocketMessage()
+        Message = SocketMessage()
         Message.ParseFromString(websocket)
         if Message.payloadType == 310:
             self.parseFeedPushPack(Message.payload)
-        if Message.payloadType == kuaishou_pb2.PayloadType.SC_LIVE_WATCHING_LIST:
+        if Message.payloadType == PayloadType.SC_LIVE_WATCHING_LIST:
             self.parseSCWebLiveWatchingUsers(Message.payload)
 
     def parseFeedPushPack(self, message: bytes):
-        SCWebFeedPUsh = kuaishou_pb2.SCWebFeedPush()
+        # SCWebFeedPUsh = kuaishou_pb2.SCWebFeedPush()
+        SCWebFeedPUsh = SCWebFeedPush()
         SCWebFeedPUsh.ParseFromString(message)
         obj = MessageToDict(SCWebFeedPUsh, preserving_proto_field_name=True)
 
@@ -244,7 +261,11 @@ class kslive(object):
             for i in msg_list:
                 userName = i['user']['userName']
                 giftId = i['giftId']
-                giftName = giftDict["data"][str(giftId)]["giftName"]
+                giftDic = giftDict["data"].get(str(giftId), {
+                    "giftName": "荧光棒",
+                    "giftUrl": "http://p1-live.a.yximgs.com/uhead/AB/2020/01/13/10/BMjAyMDAxMTMxMDE5MTZfMF9nMV9sdg==.jpg"
+                })
+                giftName = giftDic["giftName"]
                 print("giftFeeds - %s  -->  %s" % (userName, giftName))
                 self.giftLists.append(dict(user=userName, gift=giftName))
             self.lock.release()
@@ -259,9 +280,19 @@ class kslive(object):
             self.lock.release()
 
     def parseSCWebLiveWatchingUsers(self, message: bytes):
-        scWebLiveWatchingUsers = kuaishou_pb2.SCWebLiveWatchingUsers()
+        # scWebLiveWatchingUsers = kuaishou_pb2.SCWebLiveWatchingUsers()
+        scWebLiveWatchingUsers = SCWebLiveWatchingUsers()
         scWebLiveWatchingUsers.ParseFromString(message)
-        data = MessageToDict(scWebLiveWatchingUsers, preserving_proto_field_name=True)
+        obj = MessageToDict(scWebLiveWatchingUsers,
+                            preserving_proto_field_name=True)
+        if obj.get('watchingUser', ''):
+            msg_list = obj.get('watchingUser', '')
+            self.lock.acquire()
+            for i in msg_list:
+                userName = i['user']['userName']
+                print("enterRoom - %s " % (userName))
+                self.watchingUsersLists.append(dict(user=userName))
+            self.lock.release()
 
 
 class run(kslive):
@@ -307,11 +338,11 @@ class run(kslive):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="avatar engine")
-    parser.add_argument('-m', "--mobile", type=str, default='13841281063',
+    parser.add_argument('-m', "--mobile", type=str, default='13260271063',
                         help="mobile phone")
-    parser.add_argument('-p', "--pwd", type=str, default="asdasd",
+    parser.add_argument('-p', "--pwd", type=str, default="123qweqwe",
                         help="pass word")
-    parser.add_argument('-r', '--roomId', type=str, default='Mubai0806',
+    parser.add_argument('-r', '--roomId', type=str, default='KPL704668133',
                         help='live room id')
     cmd_args = parser.parse_args()
 
